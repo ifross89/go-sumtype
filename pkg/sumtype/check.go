@@ -5,6 +5,7 @@ import (
 	"go/ast"
 	"go/token"
 	"go/types"
+	"golang.org/x/tools/go/analysis"
 	"sort"
 	"strings"
 )
@@ -42,15 +43,14 @@ func (e inexhaustiveError) Names() []string {
 // Note that if the type switch contains a non-panicing default case, then
 // exhaustiveness checks are disabled.
 func checkSwitch(
-	fset *token.FileSet,
-	pkg *types.Package,
+	pass *analysis.Pass,
 	defs []sumTypeDef,
 	swtch *ast.TypeSwitchStmt,
 ) error {
-	def, missing := missingVariantsInSwitch(pkg, defs, swtch)
+	def, missing := missingVariantsInSwitch(pass, defs, swtch)
 	if len(missing) > 0 {
 		return inexhaustiveError{
-			Pos:     fset.Position(swtch.Pos()),
+			Pos:     pass.Fset.Position(swtch.Pos()),
 			Def:     *def,
 			Missing: missing,
 		}
@@ -63,23 +63,12 @@ func checkSwitch(
 // returned. (If no sum type definition could be found, then no exhaustiveness
 // checks are performed, and therefore, no missing variants are returned.)
 func missingVariantsInSwitch(
-	pkg *types.Package,
+	pass *analysis.Pass,
 	defs []sumTypeDef,
 	swtch *ast.TypeSwitchStmt,
 ) (*sumTypeDef, []types.Object) {
 	asserted := findTypeAssertExpr(swtch)
-	selExpr, ok := asserted.(*ast.SelectorExpr)
-	if !ok {
-		panic(fmt.Sprintf("expected *ast.SelectExpr: %T", selExpr))
-	}
-
-
-	obj := pkg.Scope().Lookup(selExpr.Sel.String())
-	if obj == nil {
-		panic(fmt.Sprintf("expected non nil obj"))
-	}
-
-	ty := obj.Type()
+	ty := pass.TypesInfo.TypeOf(asserted)
 	def := findDef(defs, ty)
 	if def == nil {
 		return nil, nil
@@ -93,12 +82,7 @@ func missingVariantsInSwitch(
 
 	var variantTypes []types.Type
 	for _, expr := range variantExprs {
-		starExpr, ok := expr.(*ast.StarExpr)
-		if !ok {
-			panic("not a star expression")
-		}
-		obj := pkg.Scope().Lookup(starExpr.X.(*ast.Ident).Name)
-		variantTypes = append(variantTypes, obj.Type())
+		variantTypes = append(variantTypes, pass.TypesInfo.TypeOf(expr))
 	}
 
 	return def, def.missing(variantTypes)
@@ -155,7 +139,6 @@ func defaultClauseAlwaysPanics(swtch *ast.TypeSwitchStmt) bool {
 	return fun.Name == "panic"
 }
 
-
 // findTypeAssertExpr extracts the expression that is being type asserted from a
 // type swtich statement.
 func findTypeAssertExpr(swtch *ast.TypeSwitchStmt) ast.Expr {
@@ -167,7 +150,6 @@ func findTypeAssertExpr(swtch *ast.TypeSwitchStmt) ast.Expr {
 	}
 	return expr.(*ast.TypeAssertExpr).X
 }
-
 
 // findDef returns the sum type definition corresponding to the given type. If
 // no such sum type definition exists, then nil is returned.

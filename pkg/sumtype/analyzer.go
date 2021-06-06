@@ -5,7 +5,6 @@ import (
 	"bytes"
 	"fmt"
 	"go/ast"
-	"go/token"
 	"go/types"
 	"golang.org/x/tools/go/analysis"
 	"golang.org/x/tools/go/analysis/passes/inspect"
@@ -51,7 +50,7 @@ func run(pass *analysis.Pass) (interface{}, error) {
 
 	var (
 		fileToPkg   = map[*ast.File]*types.Package{}
-		switchToPkg = map[*ast.TypeSwitchStmt]*types.Package{}
+		switches []*ast.TypeSwitchStmt
 	)
 
 	inspector.Preorder(nodeFilter, func(node ast.Node) {
@@ -60,11 +59,11 @@ func run(pass *analysis.Pass) (interface{}, error) {
 			fileToPkg[v] = pass.Pkg
 
 		case *ast.TypeSwitchStmt:
-			switchToPkg[v] = pass.Pkg
+			switches = append(switches, v)
 		}
 	})
 
-	decls, err := findSumTypeDecls(pass.Fset, fileToPkg)
+	decls, err := findSumTypeDecls(pass, fileToPkg)
 	if err != nil {
 		return nil, err
 	}
@@ -78,8 +77,8 @@ func run(pass *analysis.Pass) (interface{}, error) {
 		return nil, errs[0]
 	}
 
-	for swtch, pkg := range switchToPkg {
-		err := checkSwitch(pass.Fset, pkg, defs, swtch)
+	for _, swtch := range switches {
+		err := checkSwitch(pass, defs, swtch)
 		if err != nil {
 			return nil, err
 		}
@@ -88,10 +87,10 @@ func run(pass *analysis.Pass) (interface{}, error) {
 	return nil, nil
 }
 
-func findSumTypeDecls(fset *token.FileSet, filesToPkg map[*ast.File]*types.Package) ([]sumTypeDecl, error) {
+func findSumTypeDecls(pass *analysis.Pass, filesToPkg map[*ast.File]*types.Package) ([]sumTypeDecl, error) {
 	var decls []sumTypeDecl
 	for file, pkg := range filesToPkg {
-		pos := fset.Position(file.Pos())
+		pos := pass.Fset.Position(file.Pos())
 		filename := pos.Filename
 		if filepath.Base(filename) == "C" {
 			// ignore (fake?) cgo files
