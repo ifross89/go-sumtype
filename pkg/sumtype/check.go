@@ -1,34 +1,16 @@
 package sumtype
 
 import (
-	"fmt"
 	"go/ast"
-	"go/token"
 	"go/types"
 	"golang.org/x/tools/go/analysis"
 	"sort"
 	"strings"
 )
 
-// inexhaustiveError is returned from check for each occurrence of inexhaustive
-// case analysis in a Go type switch statement.
-type inexhaustiveError struct {
-	Pos     token.Position
-	Def     sumTypeDef
-	Missing []types.Object
-}
-
-func (e inexhaustiveError) Error() string {
-	return fmt.Sprintf(
-		"%s: exhaustiveness check failed for sum type '%s': missing cases for %s",
-		e.Pos, e.Def.Decl.TypeName, strings.Join(e.Names(), ", "))
-}
-
-// Names returns a sorted list of names corresponding to the missing variant
-// cases.
-func (e inexhaustiveError) Names() []string {
+func missingNames(objs []types.Object) []string {
 	var list []string
-	for _, o := range e.Missing {
+	for _, o := range objs {
 		list = append(list, o.Name())
 	}
 	sort.Strings(list)
@@ -49,11 +31,10 @@ func checkSwitch(
 ) error {
 	def, missing := missingVariantsInSwitch(pass, defs, swtch)
 	if len(missing) > 0 {
-		return inexhaustiveError{
-			Pos:     pass.Fset.Position(swtch.Pos()),
-			Def:     *def,
-			Missing: missing,
-		}
+		pass.Reportf(
+			swtch.Pos(),
+			"exhaustiveness check failed for sum type '%s': missing cases for %s",
+			def.Decl.TypeName, strings.Join(missingNames(missing), ", "))
 	}
 	return nil
 }
