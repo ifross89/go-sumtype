@@ -3,7 +3,6 @@ package sumtype
 import (
 	"bufio"
 	"bytes"
-	"fmt"
 	"go/ast"
 	"go/token"
 	"go/types"
@@ -32,42 +31,33 @@ type sumTypeDecl struct {
 	TypeName string
 	// Position of the declaration
 	Pos token.Pos
-	// The file path where this declaration was found.
-	Path string
-	// The line number where this declaration was found.
-	Line int
-}
-
-// Location returns a short string describing where this declaration was found.
-func (d sumTypeDecl) Location() string {
-	return fmt.Sprintf("%s:%d", d.Path, d.Line)
 }
 
 func run(pass *analysis.Pass) (interface{}, error) {
 	// pass.ResultOf[inspect.Analyzer] will be set if we've added inspect.Analyzer to Requires.
 	inspector := pass.ResultOf[inspect.Analyzer].(*inspector.Inspector)
 
-	nodeFilter := []ast.Node{ // filter needed nodes: visit only them
+	nodeFilter := []ast.Node{
 		(*ast.File)(nil),
 		(*ast.TypeSwitchStmt)(nil),
 	}
 
 	var (
-		fileToPkg = map[*ast.File]*types.Package{}
-		switches  []*ast.TypeSwitchStmt
+		filesToPkg = map[*ast.File]*types.Package{}
+		switches   []*ast.TypeSwitchStmt
 	)
 
 	inspector.Preorder(nodeFilter, func(node ast.Node) {
 		switch v := node.(type) {
 		case *ast.File:
-			fileToPkg[v] = pass.Pkg
+			filesToPkg[v] = pass.Pkg
 
 		case *ast.TypeSwitchStmt:
 			switches = append(switches, v)
 		}
 	})
 
-	decls := findSumTypeDecls(pass, fileToPkg)
+	decls := findSumTypeDecls(pass, filesToPkg)
 	if len(decls) == 0 {
 		return nil, nil
 	}
@@ -143,8 +133,6 @@ func sumTypeDeclSearch(path string) ([]sumTypeDecl, error) {
 		}
 		decls = append(decls, sumTypeDecl{
 			TypeName: ty,
-			Path:     path,
-			Line:     lineNum,
 		})
 	}
 	if err := scanner.Err(); err != nil {
