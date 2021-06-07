@@ -3,9 +3,10 @@ package sumtype
 import (
 	"go/ast"
 	"go/types"
-	"golang.org/x/tools/go/analysis"
 	"sort"
 	"strings"
+
+	"golang.org/x/tools/go/analysis"
 )
 
 func missingNames(objs []types.Object) []string {
@@ -28,7 +29,7 @@ func checkSwitch(
 	pass *analysis.Pass,
 	defs []sumTypeDef,
 	swtch *ast.TypeSwitchStmt,
-) error {
+) {
 	def, missing := missingVariantsInSwitch(pass, defs, swtch)
 	if len(missing) > 0 {
 		pass.Reportf(
@@ -36,7 +37,7 @@ func checkSwitch(
 			"exhaustiveness check failed for sum type '%s': missing cases for %s",
 			def.Decl.TypeName, strings.Join(missingNames(missing), ", "))
 	}
-	return nil
+	return
 }
 
 // missingVariantsInSwitch returns a list of missing variants corresponding to
